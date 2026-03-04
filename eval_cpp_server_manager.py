@@ -61,6 +61,11 @@ def start_server(
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
+    extra_ld = os.environ.get("EXTRA_LD_LIBRARY_PATH", "")
+    if extra_ld:
+        ld_path = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = f"{extra_ld}:{ld_path}" if ld_path else extra_ld
+
     cmd = [
         LLAMA_SERVER_BIN,
         "--model", model_path,
@@ -73,7 +78,7 @@ def start_server(
     ]
 
     if log_dir is None:
-        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, f"server_gpu{gpu_id}.log")
     log_f = open(log_path, "w")

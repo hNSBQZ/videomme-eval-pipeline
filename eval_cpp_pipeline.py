@@ -37,10 +37,13 @@ logger = logging.getLogger(__name__)
 
 # ==================== 数据集加载 ====================
 
-def load_dataset(parquet_path: str = PARQUET_PATH) -> pd.DataFrame:
-    """加载 Video-MME parquet 数据集。"""
+def load_dataset(parquet_path: str = PARQUET_PATH, limit: int = 0) -> pd.DataFrame:
+    """加载 Video-MME parquet 数据集。limit > 0 时只取前 limit 条。"""
     logger.info(f"Loading dataset from {parquet_path}")
     df = pd.read_parquet(parquet_path)
+    if limit > 0:
+        df = df.head(limit)
+        logger.info(f"Limited to first {limit} rows")
     logger.info(f"Loaded {len(df)} questions")
     return df
 
@@ -318,6 +321,7 @@ def parse_args():
     parser.add_argument("--parquet", type=str, default=PARQUET_PATH, help="Path to parquet file")
     parser.add_argument("--video-dir", type=str, default=VIDEO_DATA_DIR, help="Video data directory")
     parser.add_argument("--output", type=str, default=OUTPUT_JSON, help="Output JSON path")
+    parser.add_argument("--limit", type=int, default=0, help="Only load first N rows from parquet (0 = all)")
     parser.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return parser.parse_args()
 
@@ -341,7 +345,7 @@ def main():
     logger.info("=" * 60)
 
     # 1. 加载数据集
-    df = load_dataset(args.parquet)
+    df = load_dataset(args.parquet, limit=args.limit)
     video_groups = group_by_video(df)
     chunks = split_into_chunks(video_groups, args.num_gpus)
 

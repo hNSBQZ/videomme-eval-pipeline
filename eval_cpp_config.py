@@ -2,12 +2,18 @@
 Video-MME CPP 评测 Pipeline 配置
 """
 import os
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # ==================== 路径配置 ====================
 
 PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-LLAMA_SERVER_BIN = os.path.join(PROJ_ROOT, "llama.cpp-omni", "build", "llama-server")
+LLAMA_SERVER_BIN = os.environ.get(
+    "LLAMA_SERVER_BIN",
+    os.path.join(PROJ_ROOT, "llama.cpp-omni", "build", "bin", "llama-server"),
+)
 
 # 模型文件
 LLM_MODEL_PATH = os.environ.get(
@@ -20,8 +26,14 @@ GGUF_MODEL_DIR = os.environ.get(
 )
 
 # 数据集
-PARQUET_PATH = os.path.join(PROJ_ROOT, "Video-MME", "videomme", "test-00000-of-00001.parquet")
-VIDEO_DATA_DIR = os.path.join(PROJ_ROOT, "Video-MME", "data")
+PARQUET_PATH = os.environ.get(
+    "PARQUET_PATH",
+    os.path.join(PROJ_ROOT, "Video-MME", "videomme", "test-00000-of-00001.parquet"),
+)
+VIDEO_DATA_DIR = os.environ.get(
+    "VIDEO_DATA_DIR",
+    os.path.join(PROJ_ROOT, "Video-MME", "data"),
+)
 
 # 输出
 OUTPUT_DIR = os.path.join(PROJ_ROOT, "cpp-eval", "output")
