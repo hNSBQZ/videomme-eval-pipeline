@@ -1,0 +1,10 @@
+# Python compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Log files
+log/
+
+# Environment variables
+.env
