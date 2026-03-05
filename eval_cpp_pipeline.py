@@ -218,7 +218,7 @@ def process_video(
             "question": q["question"],
             "options": q["options"],
             "answer": q["answer"],
-            "response": response_text,
+            "response": answer_pred,
         })
         resp_short = repr(response_text)[:80]
         logger.info(f"  Q={q['question_id']} GT={q['answer']} Pred={answer_pred} Response={resp_short}")
@@ -322,6 +322,11 @@ def parse_args():
     parser.add_argument("--video-dir", type=str, default=VIDEO_DATA_DIR, help="Video data directory")
     parser.add_argument("--output", type=str, default=OUTPUT_JSON, help="Output JSON path")
     parser.add_argument("--limit", type=int, default=0, help="Only load first N rows from parquet (0 = all)")
+    parser.add_argument("--limit", type=int, default=0, help="Only load first N rows from parquet (0 = all)")
+    parser.add_argument("--skip-rerun", action="store_true", help="Skip rerun of failed questions")
+    parser.add_argument("--skip-scoring", action="store_true", help="Skip scoring after evaluation")
+    parser.add_argument("--rerun-gpu", type=int, default=0, help="GPU id for rerun server")
+    parser.add_argument("--rerun-port", type=int, default=9080, help="Port for rerun server")
     parser.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return parser.parse_args()
 
@@ -399,7 +404,44 @@ def main():
         logger.info("Stopping servers...")
         stop_all_servers(servers)
         cleanup_all_frames()
-        logger.info("Pipeline finished")
+
+    # 8. 重跑失败题目
+    if not args.skip_rerun:
+        from rerun_failed import find_failed_qids, load_questions_by_qids, rerun_questions, patch_output
+        from eval_cpp_server_manager import start_server, wait_server_ready, stop_server
+        failed_qids = find_failed_qids(args.output)
+        if failed_qids:
+            logger.info(f"Rerunning {len(failed_qids)} failed questions...")
+            questions = load_questions_by_qids(failed_qids)
+            server = start_server(args.rerun_gpu, args.rerun_port)
+            if wait_server_ready(server):
+                try:
+                    client = OmniServerClient(f"http://127.0.0.1:{args.rerun_port}")
+                    client.omni_init(media_type=MEDIA_TYPE, use_tts=USE_TTS, n_predict=MAX_TOKENS)
+                    results = rerun_questions(client, questions)
+                    client.close()
+                finally:
+                    stop_server(server)
+                patch_output(args.output, results)
+            else:
+                stop_server(server)
+                logger.error("Rerun server failed to start, skipping.")
+        else:
+            logger.info("All responses valid, no rerun needed.")
+
+    # 9. 评分
+    if not args.skip_scoring:
+        from eval_your_result import eval_your_results
+        logger.info("Running Video-MME scoring...")
+        eval_your_results(
+            args.output,
+            video_types=["short", "medium", "long"],
+            return_categories_accuracy=True,
+            return_sub_categories_accuracy=True,
+            return_task_types_accuracy=True,
+        )
+
+    logger.info("Pipeline finished.")
 
 
 if __name__ == "__main__":

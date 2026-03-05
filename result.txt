@@ -1,0 +1,262 @@
+=====================================
+Evaluation on video Type: short
+=====================================
+-------------------------------------
+Video Categories
+-------------------------------------
+Knowledge:  73.0%
+Film & Television:  75.8%
+Sports Competition:  71.3%
+Artistic Performance:  74.2%
+Life Record:  74.3%
+Multilingual:  80.0%
+-------------------------------------
+Video Sub Categories
+-------------------------------------
+Humanity & History:  50.0%
+Literature & Art:  70.0%
+Biology & Medicine:  90.0%
+Finance & Commerce:  73.3%
+Astronomy:  73.3%
+Geography:  63.3%
+Law:  80.0%
+Life Tip:  83.3%
+Technology:  73.3%
+Animation:  76.7%
+Movie & TV Show:  73.3%
+Documentary:  66.7%
+News Report:  86.7%
+Esports:  70.0%
+Basketball:  63.3%
+Football:  80.0%
+Athletics:  76.7%
+Other Sports:  66.7%
+Stage Play:  83.3%
+Magic Show:  70.0%
+Variety Show:  76.7%
+Acrobatics:  66.7%
+Handicraft:  86.7%
+Food:  76.7%
+Fashion:  56.7%
+Daily Life:  70.0%
+Travel:  86.7%
+Pet & Animal:  83.3%
+Exercise:  60.0%
+Multilingual:  80.0%
+-------------------------------------
+Task Categories
+-------------------------------------
+Temporal Perception:  83.3%
+Spatial Perception:  86.7%
+Attribute Perception:  81.1%
+Action Recognition:  68.7%
+Object Recognition:  70.2%
+OCR Problems:  77.2%
+Counting Problem:  49.6%
+Temporal Reasoning:  84.6%
+Spatial Reasoning:  85.2%
+Action Reasoning:  78.7%
+Object Reasoning:  80.0%
+Information Synopsis:  91.5%
+-------------------------------------
+Overall Performance
+-------------------------------------
+Overall:  73.8%
+
+
+=====================================
+Evaluation on video Type: medium
+=====================================
+-------------------------------------
+Video Categories
+-------------------------------------
+Knowledge:  63.7%
+Film & Television:  66.7%
+Sports Competition:  60.7%
+Artistic Performance:  69.2%
+Life Record:  60.0%
+Multilingual:  66.7%
+-------------------------------------
+Video Sub Categories
+-------------------------------------
+Humanity & History:  53.3%
+Literature & Art:  63.3%
+Biology & Medicine:  70.0%
+Finance & Commerce:  70.0%
+Astronomy:  63.3%
+Geography:  66.7%
+Law:  56.7%
+Life Tip:  63.3%
+Technology:  66.7%
+Animation:  60.0%
+Movie & TV Show:  63.3%
+Documentary:  66.7%
+News Report:  76.7%
+Esports:  66.7%
+Basketball:  40.0%
+Football:  66.7%
+Athletics:  56.7%
+Other Sports:  73.3%
+Stage Play:  83.3%
+Magic Show:  56.7%
+Variety Show:  70.0%
+Acrobatics:  66.7%
+Handicraft:  73.3%
+Food:  46.7%
+Fashion:  63.3%
+Daily Life:  53.3%
+Travel:  60.0%
+Pet & Animal:  70.0%
+Exercise:  53.3%
+Multilingual:  66.7%
+-------------------------------------
+Task Categories
+-------------------------------------
+Temporal Perception:  71.0%
+Spatial Perception:  52.4%
+Attribute Perception:  67.1%
+Action Recognition:  58.8%
+Object Recognition:  70.5%
+OCR Problems:  51.5%
+Counting Problem:  45.3%
+Temporal Reasoning:  56.2%
+Spatial Reasoning:  77.8%
+Action Reasoning:  60.3%
+Object Reasoning:  67.2%
+Information Synopsis:  88.5%
+-------------------------------------
+Overall Performance
+-------------------------------------
+Overall:  63.6%
+
+
+=====================================
+Evaluation on video Type: long
+=====================================
+-------------------------------------
+Video Categories
+-------------------------------------
+Knowledge:  58.9%
+Film & Television:  56.7%
+Sports Competition:  60.0%
+Artistic Performance:  46.7%
+Life Record:  45.7%
+Multilingual:  46.7%
+-------------------------------------
+Video Sub Categories
+-------------------------------------
+Humanity & History:  43.3%
+Literature & Art:  60.0%
+Biology & Medicine:  66.7%
+Finance & Commerce:  66.7%
+Astronomy:  63.3%
+Geography:  50.0%
+Law:  46.7%
+Life Tip:  70.0%
+Technology:  63.3%
+Animation:  56.7%
+Movie & TV Show:  60.0%
+Documentary:  66.7%
+News Report:  43.3%
+Esports:  60.0%
+Basketball:  56.7%
+Football:  70.0%
+Athletics:  50.0%
+Other Sports:  63.3%
+Stage Play:  56.7%
+Magic Show:  53.3%
+Variety Show:  30.0%
+Acrobatics:  46.7%
+Handicraft:  66.7%
+Food:  30.0%
+Fashion:  43.3%
+Daily Life:  40.0%
+Travel:  40.0%
+Pet & Animal:  60.0%
+Exercise:  40.0%
+Multilingual:  46.7%
+-------------------------------------
+Task Categories
+-------------------------------------
+Temporal Perception:  66.7%
+Spatial Perception:  33.3%
+Attribute Perception:  59.3%
+Action Recognition:  47.6%
+Object Recognition:  55.6%
+OCR Problems:  42.9%
+Counting Problem:  37.5%
+Temporal Reasoning:  39.6%
+Spatial Reasoning:  63.6%
+Action Reasoning:  50.0%
+Object Reasoning:  50.8%
+Information Synopsis:  75.5%
+-------------------------------------
+Overall Performance
+-------------------------------------
+Overall:  53.7%
+
+
+=====================================
+Evaluation on the entire dataset
+=====================================
+-------------------------------------
+Video Domains
+-------------------------------------
+Knowledge:  65.2%
+Film & Television:  66.4%
+Sports Competition:  64.0%
+Artistic Performance:  63.3%
+Life Record:  60.0%
+Multilingual:  64.4%
+-------------------------------------
+Video Sub Categories
+-------------------------------------
+Humanity & History:  48.9%
+Literature & Art:  64.4%
+Biology & Medicine:  75.6%
+Finance & Commerce:  70.0%
+Astronomy:  66.7%
+Geography:  60.0%
+Law:  61.1%
+Life Tip:  72.2%
+Technology:  67.8%
+Animation:  64.4%
+Movie & TV Show:  65.6%
+Documentary:  66.7%
+News Report:  68.9%
+Esports:  65.6%
+Basketball:  53.3%
+Football:  72.2%
+Athletics:  61.1%
+Other Sports:  67.8%
+Stage Play:  74.4%
+Magic Show:  60.0%
+Variety Show:  58.9%
+Acrobatics:  60.0%
+Handicraft:  75.6%
+Food:  51.1%
+Fashion:  54.4%
+Daily Life:  54.4%
+Travel:  62.2%
+Pet & Animal:  71.1%
+Exercise:  51.1%
+Multilingual:  64.4%
+-------------------------------------
+Task Categories
+-------------------------------------
+Temporal Perception:  74.5%
+Spatial Perception:  70.4%
+Attribute Perception:  73.9%
+Action Recognition:  60.7%
+Object Recognition:  68.1%
+OCR Problems:  61.2%
+Counting Problem:  45.9%
+Temporal Reasoning:  49.7%
+Spatial Reasoning:  78.6%
+Action Reasoning:  56.8%
+Object Reasoning:  60.8%
+Information Synopsis:  82.7%
+-------------------------------------
+Overall Performance
+-------------------------------------
+Overall:  63.7%
