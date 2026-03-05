@@ -2,6 +2,25 @@
 
 基于 llama.cpp-omni 的 Video-MME 视频理解评测流水线，支持多卡并行推理、自动重跑失败题目、自动评分。
 
+## 关于 llama.cpp-omni 的修改
+
+本仓库包含了一份修改后的 [llama.cpp-omni](https://github.com/anthropic-ai/llama.cpp-omni) 源码（`llama.cpp-omni/` 目录）。为了支持 Video-MME 视频评测流程，对以下文件做了修改：
+
+- `tools/omni/omni.cpp` — 扩展 omni 推理接口，支持多帧视频 prefill
+- `tools/omni/omni.h` — 对应的头文件声明
+- `tools/server/server.cpp` — 调整 server 端 streaming API 路由
+
+编译方式与原始 llama.cpp-omni 一致，请参考其文档进行 CMake 构建：
+
+```bash
+cd llama.cpp-omni
+mkdir build && cd build
+cmake .. -DGGML_CUDA=ON
+cmake --build . --config Release -j
+```
+
+编译产物位于 `llama.cpp-omni/build/bin/`。
+
 ## 环境准备
 
 ```bash
@@ -86,7 +105,8 @@ python eval_your_result.py \
 
 ```
 cpp-eval/
-├── eval_cpp_pipeline.py      # 主流水线
+├── llama.cpp-omni/            # 修改后的 llama.cpp-omni 源码（含视频评测接口改动）
+├── eval_cpp_pipeline.py       # 主流水线
 ├── eval_cpp_config.py         # 配置（路径、参数）
 ├── eval_cpp_server_manager.py # llama-server 生命周期管理
 ├── eval_cpp_http_client.py    # HTTP 客户端（omni streaming API）

@@ -8,3 +8,6 @@ log/
 
 # Environment variables
 .env
+
+# llama.cpp build artifacts
+llama.cpp-omni/build/
