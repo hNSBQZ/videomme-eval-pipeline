@@ -9150,29 +9150,16 @@ bool stream_decode(struct omni_context * ctx_omni, std::string debug_dir, int ro
         // stream_prefill 已添加 <unit>[audio_embed]
         // 模型会输出 <|speak|>xxx<|chunk_eos|> 或 <|listen|><|chunk_eos|>
         print_with_timestamp("stream_decode: 双工模式，跳过 assistant prompt\n");
-    } else if (ctx_omni->use_tts) {
-        // 🔧 [非双工 TTS 模式] 需要包含 <|tts_bos|>，告诉模型开始生成 TTS 文本
-        // stream_prefill 已添加 <|audio_start|>[audio]<|audio_end|>，这里关闭用户消息并添加 assistant prompt
-        // 格式: <|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<|tts_bos|>
-        std::string prompt = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<|tts_bos|>";
-        print_with_timestamp("📍 [单工TTS] 添加 assistant prompt: \"%s\", n_past=%d\n", 
-                            prompt.c_str(), ctx_omni->n_past);
-        {
-            eval_string(ctx_omni, ctx_omni->params, prompt.c_str(), ctx_omni->params->n_batch, &ctx_omni->n_past, false);
-        }
-        print_with_timestamp("📍 [单工TTS] assistant prompt 完成, n_past=%d\n", ctx_omni->n_past);
     } else {
-        // 🔧 [非双工纯 LLM 模式] 使用标准 assistant prompt + think 占位符
-        // 预填充 <think>\n\n</think>\n\n 告诉模型 thinking 阶段已完成，直接输出答案
-        // 与 Python chat template 中 enable_thinking=false 的行为一致
-        // 格式: <|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
-        std::string prompt = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
-        print_with_timestamp("📍 [纯LLM] 添加 assistant prompt: \"%s\", n_past=%d\n",
+        // 🔧 [强制对齐] 非双工模式统一追加 <|tts_bos|>（无论 use_tts 是否启用）
+        // 目标格式: <|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<|tts_bos|>
+        std::string prompt = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<|tts_bos|>";
+        print_with_timestamp("📍 [单工统一] 添加 assistant prompt(含<|tts_bos|>): \"%s\", n_past=%d\n",
                             prompt.c_str(), ctx_omni->n_past);
         {
             eval_string(ctx_omni, ctx_omni->params, prompt.c_str(), ctx_omni->params->n_batch, &ctx_omni->n_past, false);
         }
-        print_with_timestamp("📍 [纯LLM] assistant prompt 完成, n_past=%d\n", ctx_omni->n_past);
+        print_with_timestamp("📍 [单工统一] assistant prompt 完成, n_past=%d\n", ctx_omni->n_past);
     }
     LOG_INF("<user>%s\n", ctx_omni->params->prompt.c_str());
     LOG_INF("<assistant>");
