@@ -59,6 +59,18 @@ VIDEO_DATA_DIR=/path/to/videomme/data
 python eval_cpp_pipeline.py --num-gpus 8 --base-port 9080
 ```
 
+### 推荐启动（保存 Python 日志到文件）
+
+```bash
+LOG="log/pipeline_$(date +%Y%m%d_%H%M%S).log"
+nohup bash -c "python -u eval_cpp_pipeline.py --num-gpus 8 --base-port 9080 2>&1 | tee \"$LOG\"" >/dev/null 2>&1 &
+echo "log: $LOG"
+```
+
+- `2>&1 | tee ...` 会把 Python 的 stdout/stderr 同时输出到屏幕和日志文件
+- 按 `Ctrl+C` 会触发优雅中断：停止 worker 线程处理并回收 llama-server 进程
+- llama-server 日志写入 `log/server_gpu{gpu_id}.log`，并自动轮转历史日志（默认保留最近 5 份）
+
 流水线会依次执行：
 1. 加载数据集，按视频分组并分配到各 GPU
 2. 启动 N 个 llama-server，多线程并发推理
@@ -83,6 +95,24 @@ python eval_cpp_pipeline.py --num-gpus 8 --base-port 9080
 ```bash
 python eval_cpp_pipeline.py --num-gpus 1 --base-port 9080 --limit 6
 ```
+
+如需全链路记录 `eval_cpp_http_client.py` 的所有 HTTP 请求内容（URL + 完整 JSON payload），可使用 DEBUG 日志并落盘：
+
+```bash
+LOG="log/http_trace_$(date +%Y%m%d_%H%M%S).log"
+python -u eval_cpp_pipeline.py --num-gpus 1 --base-port 9080 --limit 6 --log-level DEBUG 2>&1 | tee "$LOG"
+echo "http trace log: $LOG"
+```
+
+### 每帧换行对齐（Python 链路一致性）
+
+当前客户端默认会在每个图片 prefill 请求（`cnt=0..63`）里附带：
+
+```json
+{"prompt":"\n"}
+```
+
+这样可以在 `max_slice_nums=1` 时显式实现“每帧后换行分隔”，更贴近 Python 侧输入形态。最后一条文本 prefill 仍传完整题目与选项，不会被该默认值覆盖。
 
 ### 单独重跑失败题目
 

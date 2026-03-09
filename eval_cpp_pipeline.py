@@ -18,6 +18,7 @@ import json
 import time
 import argparse
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 
@@ -148,6 +149,7 @@ def extract_answer(response_text: str) -> str:
 def process_video(
     client: OmniServerClient,
     video_info: Dict[str, Any],
+    stop_event: threading.Event,
     video_data_dir: str = VIDEO_DATA_DIR,
 ) -> List[Dict[str, Any]]:
     """
@@ -160,6 +162,9 @@ def process_video(
       4. decode 获取模型回答
       5. 提取答案字母
     """
+    if stop_event.is_set():
+        return []
+
     video_id = video_info["video_id"]
     video_file = video_info["videoID"] + ".mp4"
     video_path = os.path.join(video_data_dir, video_file)
@@ -189,42 +194,46 @@ def process_video(
         } for q in video_info["questions"]]
 
     results = []
-    for q in video_info["questions"]:
-        try:
-            # 1. Reset
-            client.reset()
+    try:
+        for q in video_info["questions"]:
+            if stop_event.is_set():
+                logger.info(f"Stop requested, skip remaining questions in video {video_id}")
+                break
+            try:
+                # 1. Reset
+                client.reset()
 
-            # 2. Prefill 图片帧（第一帧 skip_system_prompt=True）
-            client.prefill_all_frames(frame_paths, skip_system_prompt=True)
+                # 2. Prefill 图片帧（第一帧 skip_system_prompt=True）
+                client.prefill_all_frames(frame_paths, skip_system_prompt=True)
 
-            # 3. Prefill 文本 prompt
-            prompt = build_prompt(q["question"], q["options"])
-            client.prefill_text(prompt, cnt=len(frame_paths))
+                # 3. Prefill 文本 prompt
+                prompt = build_prompt(q["question"], q["options"])
+                client.prefill_text(prompt, cnt=len(frame_paths))
 
-            # 4. Decode
-            response_text = client.decode(round_idx=0)
+                # 4. Decode
+                response_text = client.decode(round_idx=0)
 
-            # 5. 提取答案
-            answer_pred = extract_answer(response_text)
+                # 5. 提取答案
+                answer_pred = extract_answer(response_text)
 
-        except Exception as e:
-            logger.error(f"Error processing question {q['question_id']}: {e}")
-            response_text = f"[ERROR] {e}"
-            answer_pred = ""
+            except Exception as e:
+                logger.error(f"Error processing question {q['question_id']}: {e}")
+                response_text = f"[ERROR] {e}"
+                answer_pred = ""
 
-        results.append({
-            "question_id": q["question_id"],
-            "task_type": q["task_type"],
-            "question": q["question"],
-            "options": q["options"],
-            "answer": q["answer"],
-            "response": answer_pred,
-        })
-        resp_short = repr(response_text)[:80]
-        logger.info(f"  Q={q['question_id']} GT={q['answer']} Pred={answer_pred} Response={resp_short}")
-
-    # 清理临时帧文件
-    cleanup_frames(video_id)
+            results.append({
+                "question_id": q["question_id"],
+                "task_type": q["task_type"],
+                "question": q["question"],
+                "options": q["options"],
+                "answer": q["answer"],
+                "response": answer_pred,
+            })
+            resp_short = repr(response_text)[:80]
+            logger.info(f"  Q={q['question_id']} GT={q['answer']} Pred={answer_pred} Response={resp_short}")
+    finally:
+        # 清理临时帧文件
+        cleanup_frames(video_id)
     return results
 
 
@@ -234,6 +243,7 @@ def process_chunk(
     gpu_id: int,
     port: int,
     chunk: List[Dict[str, Any]],
+    stop_event: threading.Event,
 ) -> List[Dict[str, Any]]:
     """
     单个 GPU worker：串行处理分配到的所有视频。
@@ -243,10 +253,13 @@ def process_chunk(
     total = len(chunk)
 
     for i, video_info in enumerate(chunk):
+        if stop_event.is_set():
+            logger.info(f"[GPU {gpu_id}] Stop requested, break chunk loop")
+            break
         vid = video_info["video_id"]
         logger.info(f"[GPU {gpu_id}] ({i+1}/{total}) Processing video {vid}")
         t0 = time.time()
-        results = process_video(client, video_info)
+        results = process_video(client, video_info, stop_event=stop_event)
         elapsed = time.time() - t0
         all_results.extend(results)
         logger.info(f"[GPU {gpu_id}] ({i+1}/{total}) Video {vid} done, {len(results)} questions, {elapsed:.1f}s")
@@ -322,7 +335,6 @@ def parse_args():
     parser.add_argument("--video-dir", type=str, default=VIDEO_DATA_DIR, help="Video data directory")
     parser.add_argument("--output", type=str, default=OUTPUT_JSON, help="Output JSON path")
     parser.add_argument("--limit", type=int, default=0, help="Only load first N rows from parquet (0 = all)")
-    parser.add_argument("--limit", type=int, default=0, help="Only load first N rows from parquet (0 = all)")
     parser.add_argument("--skip-rerun", action="store_true", help="Skip rerun of failed questions")
     parser.add_argument("--skip-scoring", action="store_true", help="Skip scoring after evaluation")
     parser.add_argument("--rerun-gpu", type=int, default=0, help="GPU id for rerun server")
@@ -333,6 +345,9 @@ def parse_args():
 
 def main():
     args = parse_args()
+    stop_event = threading.Event()
+    interrupted = False
+    servers = []
 
     logging.basicConfig(
         level=getattr(logging, args.log_level),
@@ -354,14 +369,16 @@ def main():
     video_groups = group_by_video(df)
     chunks = split_into_chunks(video_groups, args.num_gpus)
 
-    # 2. 启动 servers
-    logger.info("Starting llama-servers...")
-    servers = start_all_servers(args.num_gpus, args.base_port)
-
     try:
+        # 2. 启动 servers
+        logger.info("Starting llama-servers...")
+        servers = start_all_servers(args.num_gpus, args.base_port)
+
         # 3. 初始化 omni 上下文
         logger.info("Initializing omni contexts...")
         for srv in servers:
+            if stop_event.is_set():
+                break
             client = OmniServerClient(srv.base_url)
             client.omni_init(media_type=MEDIA_TYPE, use_tts=USE_TTS, n_predict=MAX_TOKENS)
             client.close()
@@ -371,11 +388,12 @@ def main():
         t_start = time.time()
         all_results = []
 
-        with ThreadPoolExecutor(max_workers=args.num_gpus) as pool:
-            futures = {}
+        pool = ThreadPoolExecutor(max_workers=args.num_gpus)
+        futures = {}
+        try:
             for gpu_id, chunk in enumerate(chunks):
                 port = args.base_port + gpu_id
-                fut = pool.submit(process_chunk, gpu_id, port, chunk)
+                fut = pool.submit(process_chunk, gpu_id, port, chunk, stop_event)
                 futures[fut] = gpu_id
 
             for fut in as_completed(futures):
@@ -386,6 +404,19 @@ def main():
                     logger.info(f"GPU {gpu_id} completed: {len(results)} questions")
                 except Exception as e:
                     logger.error(f"GPU {gpu_id} failed: {e}")
+        except KeyboardInterrupt:
+            interrupted = True
+            stop_event.set()
+            logger.warning("KeyboardInterrupt received, stopping workers and servers...")
+            for fut in futures:
+                fut.cancel()
+            # 先停 server，尽快让阻塞中的 HTTP 调用失败退出
+            stop_all_servers(servers)
+            servers = []
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
         elapsed = time.time() - t_start
         logger.info(f"Evaluation done: {len(all_results)} questions in {elapsed:.1f}s")
@@ -399,11 +430,19 @@ def main():
         total = len(all_results)
         logger.info(f"Accuracy: {correct}/{total} = {correct/total*100:.1f}%" if total > 0 else "No results")
 
+    except KeyboardInterrupt:
+        interrupted = True
+        stop_event.set()
+        logger.warning("Interrupted by user (Ctrl+C).")
     finally:
         # 7. 清理
         logger.info("Stopping servers...")
         stop_all_servers(servers)
         cleanup_all_frames()
+
+    if interrupted:
+        logger.warning("Pipeline interrupted, skip rerun and scoring.")
+        return
 
     # 8. 重跑失败题目
     if not args.skip_rerun:

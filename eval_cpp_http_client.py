@@ -9,6 +9,7 @@ llama-server HTTP 客户端封装。
 """
 import json
 import logging
+from typing import Any, Union
 
 import requests
 
@@ -26,6 +27,30 @@ class OmniServerClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
+
+    def _dump_payload(self, payload: Any) -> str:
+        """把请求 payload 序列化为可读字符串，便于全链路排查。"""
+        try:
+            return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        except TypeError:
+            return repr(payload)
+
+    def _post_json(
+        self,
+        api_path: str,
+        payload: dict,
+        timeout: Union[int, tuple],
+        stream: bool = False,
+    ) -> requests.Response:
+        """
+        统一封装 POST JSON 请求，并记录完整请求内容与响应状态。
+        """
+        url = f"{self.base_url}{api_path}"
+        logger.debug("HTTP REQUEST POST %s payload=%s", url, self._dump_payload(payload))
+        resp = self.session.post(url, json=payload, timeout=timeout, stream=stream)
+        logger.debug("HTTP RESPONSE POST %s status=%s", url, resp.status_code)
+        resp.raise_for_status()
+        return resp
 
     # ==================== omni_init ====================
 
@@ -47,10 +72,11 @@ class OmniServerClient:
             "n_predict": n_predict,
             "model_dir": model_dir,
         }
-        url = f"{self.base_url}/v1/stream/omni_init"
-        logger.debug(f"omni_init -> {url}, payload={payload}")
-        resp = self.session.post(url, json=payload, timeout=HTTP_TIMEOUT)
-        resp.raise_for_status()
+        resp = self._post_json(
+            api_path="/v1/stream/omni_init",
+            payload=payload,
+            timeout=HTTP_TIMEOUT,
+        )
         result = resp.json()
         logger.info(f"omni_init OK: {result}")
         return result
@@ -63,10 +89,11 @@ class OmniServerClient:
 
         清空 KV cache，为下一道题做准备。
         """
-        url = f"{self.base_url}/v1/stream/reset"
-        logger.debug(f"reset -> {url}")
-        resp = self.session.post(url, json={}, timeout=HTTP_TIMEOUT)
-        resp.raise_for_status()
+        resp = self._post_json(
+            api_path="/v1/stream/reset",
+            payload={},
+            timeout=HTTP_TIMEOUT,
+        )
         result = resp.json()
         logger.debug(f"reset OK: {result}")
         return result
@@ -79,6 +106,7 @@ class OmniServerClient:
         cnt: int,
         max_slice_nums: int = MAX_SLICE_NUMS,
         skip_system_prompt: bool = False,
+        frame_prompt: str = "\n",
     ) -> dict:
         """
         POST /v1/stream/prefill — 图片帧 prefill
@@ -88,20 +116,23 @@ class OmniServerClient:
             cnt: 帧序号（从 0 开始）
             max_slice_nums: 图片切片数（1=不切片，对齐 Python 评测）
             skip_system_prompt: 第一帧时传 True，跳过 voice clone system prompt
+            frame_prompt: 图片帧后追加的文本（默认换行，对齐每帧分隔）
         """
         payload = {
             "audio_path_prefix": "",
             "img_path_prefix": img_path,
             "cnt": cnt,
             "max_slice_nums": max_slice_nums,
+            "prompt": frame_prompt,
         }
         if skip_system_prompt:
             payload["skip_system_prompt"] = True
 
-        url = f"{self.base_url}/v1/stream/prefill"
-        logger.debug(f"prefill_image -> cnt={cnt}, img={img_path}, skip_sys={skip_system_prompt}")
-        resp = self.session.post(url, json=payload, timeout=HTTP_TIMEOUT)
-        resp.raise_for_status()
+        resp = self._post_json(
+            api_path="/v1/stream/prefill",
+            payload=payload,
+            timeout=HTTP_TIMEOUT,
+        )
         return resp.json()
 
     def prefill_text(self, prompt: str, cnt: int) -> dict:
@@ -116,10 +147,11 @@ class OmniServerClient:
             "cnt": cnt,
             "prompt": prompt,
         }
-        url = f"{self.base_url}/v1/stream/prefill"
-        logger.debug(f"prefill_text -> cnt={cnt}, prompt_len={len(prompt)}")
-        resp = self.session.post(url, json=payload, timeout=HTTP_TIMEOUT)
-        resp.raise_for_status()
+        resp = self._post_json(
+            api_path="/v1/stream/prefill",
+            payload=payload,
+            timeout=HTTP_TIMEOUT,
+        )
         return resp.json()
 
     # ==================== decode (SSE) ====================
@@ -141,14 +173,12 @@ class OmniServerClient:
             "stream": True,
             "round_idx": round_idx,
         }
-        url = f"{self.base_url}/v1/stream/decode"
-        logger.debug(f"decode -> {url}")
-
-        resp = self.session.post(
-            url, json=payload, stream=True, timeout=(HTTP_TIMEOUT, SSE_READ_TIMEOUT),
+        resp = self._post_json(
+            api_path="/v1/stream/decode",
+            payload=payload,
+            stream=True,
+            timeout=(HTTP_TIMEOUT, SSE_READ_TIMEOUT),
         )
-        resp.raise_for_status()
-
         return self._collect_sse_text(resp)
 
     def _collect_sse_text(self, resp: requests.Response) -> str:
@@ -186,6 +216,7 @@ class OmniServerClient:
         frame_paths: list,
         skip_system_prompt: bool = True,
         max_slice_nums: int = MAX_SLICE_NUMS,
+        frame_prompt: str = "\n",
     ) -> None:
         """
         依次 prefill 所有图片帧。
@@ -198,6 +229,7 @@ class OmniServerClient:
                 cnt=idx,
                 max_slice_nums=max_slice_nums,
                 skip_system_prompt=(skip_system_prompt and idx == 0),
+                frame_prompt=frame_prompt,
             )
 
     def close(self):

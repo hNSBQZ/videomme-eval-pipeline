@@ -6,6 +6,7 @@ import time
 import signal
 import subprocess
 import logging
+from glob import glob
 from typing import List, Optional
 
 import requests
@@ -41,12 +42,40 @@ class ServerInstance:
             return False
 
 
+def _rotate_server_logs(log_dir: str, gpu_id: int, keep_rotated_logs: int = 5) -> str:
+    """
+    轮转 server 日志，避免单文件无限变大。
+
+    - 当前运行始终写入: server_gpu{gpu_id}.log
+    - 若旧文件存在且非空，先重命名为带时间戳历史日志
+    - 仅保留最近 keep_rotated_logs 份历史日志
+    """
+    os.makedirs(log_dir, exist_ok=True)
+    active_log = os.path.join(log_dir, f"server_gpu{gpu_id}.log")
+
+    if os.path.exists(active_log) and os.path.getsize(active_log) > 0:
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        rotated_log = os.path.join(log_dir, f"server_gpu{gpu_id}_{ts}.log")
+        os.replace(active_log, rotated_log)
+
+    rotated_pattern = os.path.join(log_dir, f"server_gpu{gpu_id}_*.log")
+    rotated_logs = sorted(glob(rotated_pattern), key=os.path.getmtime, reverse=True)
+    for old_log in rotated_logs[keep_rotated_logs:]:
+        try:
+            os.remove(old_log)
+        except OSError as e:
+            logger.warning(f"Failed to remove old log {old_log}: {e}")
+
+    return active_log
+
+
 def start_server(
     gpu_id: int,
     port: int,
     model_path: str = LLM_MODEL_PATH,
     ctx_size: int = CTX_SIZE,
     log_dir: Optional[str] = None,
+    keep_rotated_logs: int = 5,
 ) -> ServerInstance:
     """
     启动一个 llama-server 进程，绑定到指定 GPU。
@@ -79,9 +108,8 @@ def start_server(
 
     if log_dir is None:
         log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
-    os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, f"server_gpu{gpu_id}.log")
-    log_f = open(log_path, "w")
+    log_path = _rotate_server_logs(log_dir, gpu_id, keep_rotated_logs=keep_rotated_logs)
+    log_f = open(log_path, "w", encoding="utf-8", buffering=1)
 
     logger.info(f"Starting server on GPU {gpu_id}, port {port}: {' '.join(cmd)}")
     proc = subprocess.Popen(
@@ -131,12 +159,19 @@ def start_all_servers(
     base_port: int = BASE_PORT,
     model_path: str = LLM_MODEL_PATH,
     ctx_size: int = CTX_SIZE,
+    keep_rotated_logs: int = 5,
 ) -> List[ServerInstance]:
     """启动所有 GPU 上的 server 并等待就绪。"""
     servers: List[ServerInstance] = []
     for gpu_id in range(num_gpus):
         port = base_port + gpu_id
-        srv = start_server(gpu_id, port, model_path, ctx_size)
+        srv = start_server(
+            gpu_id,
+            port,
+            model_path=model_path,
+            ctx_size=ctx_size,
+            keep_rotated_logs=keep_rotated_logs,
+        )
         servers.append(srv)
 
     logger.info(f"Waiting for {num_gpus} servers to become ready...")
