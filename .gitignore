@@ -9,5 +9,9 @@ log/
 # Environment variables
 .env
 
-# llama.cpp build artifacts
-llama.cpp-omni/build/
+# llama.cpp-omni (users should clone separately and apply patch)
+llama.cpp-omni/
+
+# Result files
+result/
+*.txt
