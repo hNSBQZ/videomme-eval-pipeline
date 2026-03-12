@@ -1,10 +1,10 @@
 """
 视频帧采样与临时 JPG 保存。
 
-帧采样逻辑与 evalkit 的 encode_video() 完全对齐：
+帧采样逻辑对齐 Python videomme.py 的 default 策略：
   - 解码器优先级：decord → ffmpeg → torchvision
-  - 短视频（≤ MAX_NUM_FRAMES 秒）：1fps
-  - 长视频（> MAX_NUM_FRAMES 秒）：0.1s 粒度候选帧 → uniform_sample 到 MAX_NUM_FRAMES 帧
+  - 每 round(avg_fps) 帧取 1 帧（≈1fps）
+  - 超过 MAX_NUM_FRAMES 时 uniform_sample 到 MAX_NUM_FRAMES 帧
 """
 import os
 import shutil
@@ -54,27 +54,20 @@ def _sample_frame_indices(
     max_num_frames: int,
 ) -> Tuple[List[int], List[float]]:
     """
-    根据视频元信息计算采样帧下标和时间戳。
+    根据视频元信息计算采样帧下标。
 
-    策略：
-      - 长视频（duration > max_num_frames）：0.1s 粒度生成候选帧 → uniform_sample 到 max_num_frames
-      - 短视频（duration ≤ max_num_frames）：1fps，每秒取一帧
+    对齐 Python videomme.py 的 default 策略：
+      sample_fps = round(avg_fps)
+      frame_idx = range(0, total_frames, sample_fps)  # ≈1fps
+      超过 max_num_frames 时 uniform_sample
     """
-    duration = num_total_frames / avg_fps
-
-    if duration > max_num_frames:
-        step = 0.1
-        num_steps = int(duration / step)
-        timestamps = [round(i * step, 1) for i in range(num_steps)]
-        frame_idx = [min(int(ts * avg_fps), num_total_frames - 1) for ts in timestamps]
-        if len(frame_idx) > max_num_frames:
-            frame_idx = _uniform_sample(frame_idx, max_num_frames)
-            timestamps = _uniform_sample(timestamps, max_num_frames)
-    else:
-        int_duration = int(duration)
-        frame_idx = [int(i * avg_fps) for i in range(int_duration)]
-        timestamps = [float(i) for i in range(int_duration)]
-
+    sample_fps = round(avg_fps)
+    if sample_fps < 1:
+        sample_fps = 1
+    frame_idx = list(range(0, num_total_frames, sample_fps))
+    if len(frame_idx) > max_num_frames:
+        frame_idx = _uniform_sample(frame_idx, max_num_frames)
+    timestamps = []
     return frame_idx, timestamps
 
 

@@ -108,9 +108,10 @@ def split_into_chunks(video_groups: Dict, n: int) -> List[List[Dict]]:
 
 def build_prompt(question: str, options: list) -> str:
     """
-    构建评测文本 prompt（与 evalkit 的 videomme 配置对齐）。
+    构建评测文本 prompt（对齐 Python videomme.py 格式）。
 
     options 来自 parquet，格式为 ["A. xxx", "B. xxx", "C. xxx", "D. xxx"]
+    Python 原版格式：每个选项前加 \n，即 Options:\nA. xxx\nB. xxx\nC. xxx\nD. xxx
     """
     options_text = "\n".join(options)
     return USER_PROMPT_TEMPLATE.format(question=question, options=options_text)

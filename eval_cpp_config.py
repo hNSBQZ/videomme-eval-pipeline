@@ -46,18 +46,18 @@ FRAME_TEMP_DIR = os.path.join(PROJ_ROOT, "cpp-eval", "tmp_frames")
 
 NUM_GPUS = int(os.environ.get("NUM_GPUS", "8"))
 BASE_PORT = int(os.environ.get("BASE_PORT", "8080"))
-CTX_SIZE = int(os.environ.get("CTX_SIZE", "8192"))
+CTX_SIZE = int(os.environ.get("CTX_SIZE", "40960"))
 
 # ==================== 评测参数 ====================
 
 MAX_NUM_FRAMES = 64
 MAX_FPS = 1.0
-MAX_SLICE_NUMS = 1
-MAX_TOKENS = 128
+MAX_SLICE_NUMS = 0
+MAX_TOKENS = 100
 
-# 解码策略：greedy + repetition_penalty（近似 Python beam search）
+# 解码策略：对齐 Python do_sample=False(greedy), repetition_penalty=1.02
 TEMPERATURE = 0.0
-REPEAT_PENALTY = 1.2
+REPEAT_PENALTY = 1.02
 
 # Server omni_init 参数
 MEDIA_TYPE = 2       # omni = audio + vision（需要 vision encoder）
@@ -66,8 +66,10 @@ USE_TTS = False
 # ==================== Prompt 模板 ====================
 
 USER_PROMPT_TEMPLATE = (
-    "{question}\n{options}\n"
-    "Please select the correct answer from the options above. Only respond with the letter."
+    "Carefully read the following question and select the letter corresponding to the correct answer."
+    "Highlight the applicable choices without giving explanations.\n"
+    "{question}\n"
+    "Options:\n{options}"
 )
 
 # ==================== 超时与重试 ====================
