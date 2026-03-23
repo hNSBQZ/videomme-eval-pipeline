@@ -66,10 +66,33 @@ def build_paths(sample: Dict[str, Any], data_dir: str = DATASET_DIR) -> Dict[str
 
 
 def split_into_chunks(samples: List[Dict], n: int) -> List[List[Dict]]:
-    """将样本均匀分成 n 份。"""
+    """
+    将样本分成 n 份，同时保证同一 video_id 不会跨 chunk。
+
+    背景：临时媒体目录按 sample(video_id) 命名。
+    若同一 video_id 跨 GPU 并发处理，会出现互相清理临时目录的问题。
+    """
     chunks = [[] for _ in range(n)]
-    for i, s in enumerate(samples):
-        chunks[i % n].append(s)
+    chunk_sizes = [0 for _ in range(n)]
+
+    # 先按 video_id 分组，保持组内样本顺序不变
+    groups: Dict[str, List[Dict]] = {}
+    for idx, sample in enumerate(samples):
+        # video_id 缺失时退化为“单样本单组”，避免意外把未知样本绑定到同一组
+        video_id = sample.get("video_id") or f"__missing_video_id_{idx}"
+        groups.setdefault(video_id, []).append(sample)
+
+    # 组级别分配：每次把当前组分给“样本数最少”的 chunk，尽量均衡负载
+    for group_samples in groups.values():
+        target = min(range(n), key=lambda i: chunk_sizes[i])
+        chunks[target].extend(group_samples)
+        chunk_sizes[target] += len(group_samples)
+
+    duplicate_video_groups = sum(1 for g in groups.values() if len(g) > 1)
+    logger.info(
+        f"Split with video_id pinning: total_groups={len(groups)}, "
+        f"duplicate_video_groups={duplicate_video_groups}"
+    )
     for i, c in enumerate(chunks):
         logger.info(f"  Chunk {i}: {len(c)} samples")
     return chunks
@@ -81,11 +104,16 @@ def build_prompt(question: str, choices: list) -> str:
     """
     构建评测文本 prompt。
 
-    对齐 evalkit 的 _build_options_prompt + 模板替换。
-    注意：JSONL 中 choices 已含 "A. xxx" 前缀，直接用换行拼接。
+    对齐 evalkit _build_options_prompt：逐项添加 "A. " 前缀 + 尾部换行，
+    再 .rstrip() 去掉末尾空白。实际数据 choices 已含 "A. xxx" 前缀，
+    Python 端会产生 "A. A. xxx" 双前缀，此处严格对齐该行为。
     """
-    options_text = "\n".join(choices)
-    return USER_PROMPT_TEMPLATE.format(question=question, options=options_text)
+    KEYS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
+    options_prompt = ""
+    for key, choice in zip(KEYS[:len(choices)], choices):
+        options_prompt += f"{key}. {choice}\n"
+    options_prompt = options_prompt.rstrip()
+    return USER_PROMPT_TEMPLATE.format(question=question, options=options_prompt)
 
 
 # ==================== 答案提取 ====================

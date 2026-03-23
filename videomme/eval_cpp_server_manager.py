@@ -14,7 +14,7 @@ import requests
 from eval_cpp_config import (
     LLAMA_SERVER_BIN, LLM_MODEL_PATH, GGUF_MODEL_DIR,
     BASE_PORT, CTX_SIZE,
-    TEMPERATURE, REPEAT_PENALTY,
+    TEMPERATURE, TOP_P, TOP_K, REPEAT_PENALTY,
     SERVER_STARTUP_TIMEOUT, SERVER_HEALTH_INTERVAL,
 )
 
@@ -88,7 +88,16 @@ def start_server(
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
     env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    # 若父进程已设置 CUDA_VISIBLE_DEVICES（如 4,5,6,7），则子进程用其中第 gpu_id 个，否则用物理 id
+    parent_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if parent_visible:
+        devices = [d.strip() for d in parent_visible.split(",") if d.strip()]
+        if gpu_id < len(devices):
+            env["CUDA_VISIBLE_DEVICES"] = devices[gpu_id]
+        else:
+            env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    else:
+        env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
     extra_ld = os.environ.get("EXTRA_LD_LIBRARY_PATH", "")
     if extra_ld:
@@ -102,6 +111,8 @@ def start_server(
         "--ctx-size", str(ctx_size),
         "--n-gpu-layers", "999",
         "--temp", str(TEMPERATURE),
+        "--top-p", str(TOP_P),
+        "--top-k", str(TOP_K),
         "--repeat-penalty", str(REPEAT_PENALTY),
         "--host", "0.0.0.0",
     ]

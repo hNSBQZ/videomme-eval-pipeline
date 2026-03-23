@@ -63,7 +63,7 @@ python eval_cpp_pipeline.py --num-gpus 8 --base-port 9080
 
 ```bash
 LOG="log/q4_km_$(date +%Y%m%d_%H%M%S).log"
-nohup bash -c "python -u eval_cpp_pipeline.py --num-gpus 4 --base-port 9080 2>&1 | tee \"$LOG\"" >/dev/null 2>&1 &
+CUDA_VISIBLE_DEVICES=4,5,6,7 nohup bash -c "python -u eval_cpp_pipeline.py --num-gpus 4 --base-port 9085 2>&1 | tee \"$LOG\"" >/dev/null 2>&1 &
 echo "log: $LOG"
 ```
 
@@ -101,6 +101,14 @@ python eval_cpp_pipeline.py --num-gpus 1 --base-port 9080 --limit 6
 ```bash
 LOG="log/http_trace_$(date +%Y%m%d_%H%M%S).log"
 python -u eval_cpp_pipeline.py --num-gpus 1 --base-port 9080 --limit 6 --log-level DEBUG 2>&1 | tee "$LOG"
+echo "http trace log: $LOG"
+```
+
+后 4 张卡跑（假设共 8 卡，使用物理卡 4,5,6,7；若总卡数不同请自行改 `CUDA_VISIBLE_DEVICES`）：
+
+```bash
+LOG="log/http_trace_$(date +%Y%m%d_%H%M%S).log"
+CUDA_VISIBLE_DEVICES=4,5,6,7 python -u eval_cpp_pipeline.py --num-gpus 4 --base-port 9080 --limit 6 --log-level DEBUG 2>&1 | tee "$LOG"
 echo "http trace log: $LOG"
 ```
 

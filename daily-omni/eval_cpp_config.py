@@ -53,13 +53,16 @@ CTX_SIZE = int(os.environ.get("CTX_SIZE", "40960"))
 
 MAX_NUM_FRAMES = 64
 MAX_FPS = 1.0
-MAX_SLICE_NUMS = 1          # 视频场景不分块
+MAX_SLICE_NUMS = 0          # 视频场景不分块，cpp参数0代表不分块，跟python推理有区别
 MAX_TOKENS = 128
 AUDIO_SR = 16000             # 音频采样率
 
-# 解码策略：对齐 Python sampling=False (greedy)
-TEMPERATURE = 0.0
-REPEAT_PENALTY = 1.0         # Daily-Omni 不设 repeat_penalty
+
+TEMPERATURE = 0.7
+TOP_P = 0.8
+TOP_K = 100
+REPEAT_PENALTY = 1.02
+
 
 # Server omni_init 参数
 MEDIA_TYPE = 2               # omni = audio + vision
@@ -71,7 +74,7 @@ USER_PROMPT_TEMPLATE = (
     "Carefully read the following question and select the letter corresponding to the correct answer."
     "Highlight the applicable choices without giving explanations.\n"
     "{question}\n"
-    "Options:\n{options}"
+    "Options:\n{options}\n"
     "Please select the correct answer from the options above. Only respond with the letter."
 )
 

@@ -36,11 +36,11 @@ VIDEO_DATA_DIR = os.environ.get(
 )
 
 # 输出
-OUTPUT_DIR = os.path.join(PROJ_ROOT, "cpp-eval", "output")
+OUTPUT_DIR = os.path.join(PROJ_ROOT, "videomme", "output")
 OUTPUT_JSON = os.path.join(OUTPUT_DIR, "output_videomme_cpp.json")
 
 # 临时帧文件目录
-FRAME_TEMP_DIR = os.path.join(PROJ_ROOT, "cpp-eval", "tmp_frames")
+FRAME_TEMP_DIR = os.path.join(PROJ_ROOT, "videomme", "tmp_frames")
 
 # ==================== Server 配置 ====================
 
@@ -55,8 +55,11 @@ MAX_FPS = 1.0
 MAX_SLICE_NUMS = 0
 MAX_TOKENS = 100
 
-# 解码策略：对齐 Python do_sample=False(greedy), repetition_penalty=1.02
-TEMPERATURE = 0.0
+# 解码策略：当前 TEMPERATURE=0.0 为 greedy（对齐 Python do_sample=False）
+# 若需开启 sampling，将 TEMPERATURE 改为 > 0（如 0.2）
+TEMPERATURE = 0.2
+TOP_P = 0.8
+TOP_K = 100
 REPEAT_PENALTY = 1.02
 
 # Server omni_init 参数
