@@ -173,7 +173,98 @@ class OmniServerClient:
         logger.debug(f"decode result: {full_text!r}")
         return full_text
 
-    # ==================== 便捷方法：交错 prefill ====================
+    # ==================== batch 音频预计算 ====================
+
+    def prefill_audio_batch(self, audio_paths: list) -> dict:
+        """
+        POST /v1/stream/prefill_audio_batch — 合并所有音频 PCM → 30s chunk mel
+        → 整体 Whisper forward → 按段拆分 embedding 并缓存到 server 端。
+
+        返回 {"status": "ok", "n_segments": N, "tokens_per_segment": [...], "total_tokens": T}
+        """
+        payload = {"audio_paths": audio_paths}
+        resp = self._post_json("/v1/stream/prefill_audio_batch", payload, timeout=HTTP_TIMEOUT)
+        return resp.json()
+
+    def prefill_audio_from_cache(
+        self,
+        audio_segment_idx: int,
+        cnt: int,
+        audio_prompt: str = "\n",
+    ) -> dict:
+        """
+        POST /v1/stream/prefill — 通过 audio_segment_idx 从 server 端缓存取
+        预计算好的 segment embedding，而非从文件独立编码。
+        """
+        payload = {
+            "audio_path_prefix": "",
+            "img_path_prefix": "",
+            "cnt": cnt,
+            "audio_segment_idx": audio_segment_idx,
+            "prompt": audio_prompt,
+        }
+        resp = self._post_json("/v1/stream/prefill", payload, timeout=HTTP_TIMEOUT)
+        return resp.json()
+
+    # ==================== 便捷方法：交错 prefill (v2 — batch 音频) ====================
+
+    def prefill_interleaved_v2(
+        self,
+        frame_paths: list,
+        audio_paths: list,
+        skip_system_prompt: bool = True,
+        max_slice_nums: int = MAX_SLICE_NUMS,
+        frame_prompt: str = "\n",
+        audio_prompt: str = "\n",
+    ) -> int:
+        """
+        交错 prefill 图片帧和音频段（v2: 音频 batch 预计算版）。
+
+        与 prefill_interleaved 的区别：先调用 prefill_audio_batch 将所有音频
+        合并 → 30s chunk mel → 整体 Whisper encoder → 按段缓存，
+        然后交错 prefill 时音频走 audio_segment_idx 从缓存取 embedding。
+        这样 mel 归一化和 conv 边界与 Python 端完全对齐。
+        """
+        # Step 1: batch 预计算所有音频 embedding
+        if audio_paths:
+            batch_result = self.prefill_audio_batch(audio_paths)
+            logger.info(f"prefill_audio_batch: {batch_result}")
+
+        # Step 2: 交错 prefill，音频用 segment_idx 引用缓存
+        cnt = 0
+        num_pairs = min(len(frame_paths), len(audio_paths)) if audio_paths else len(frame_paths)
+
+        for i in range(num_pairs):
+            self.prefill_image(
+                img_path=frame_paths[i],
+                cnt=cnt,
+                max_slice_nums=max_slice_nums,
+                skip_system_prompt=(skip_system_prompt and i == 0),
+                frame_prompt=frame_prompt,
+            )
+            cnt += 1
+
+            if audio_paths and i < len(audio_paths):
+                self.prefill_audio_from_cache(
+                    audio_segment_idx=i,
+                    cnt=cnt,
+                    audio_prompt=audio_prompt,
+                )
+                cnt += 1
+
+        for i in range(num_pairs, len(frame_paths)):
+            self.prefill_image(
+                img_path=frame_paths[i],
+                cnt=cnt,
+                max_slice_nums=max_slice_nums,
+                skip_system_prompt=(skip_system_prompt and cnt == 0),
+                frame_prompt=frame_prompt,
+            )
+            cnt += 1
+
+        return cnt
+
+    # ==================== 便捷方法：交错 prefill (v1 — 逐段独立编码) ====================
 
     def prefill_interleaved(
         self,

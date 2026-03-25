@@ -1,6 +1,0 @@
-现在说一下我的需求，我需要你能复刻原始python版的测评流水线，测评细节都在同层的daily-omni-cpp-alignment.md文件中
-不过好消息是我读了一下，图片分图，请求推理服务的逻辑感觉大部分都可以服用videomme的也就音频划分重采样什么需要你重新写一下
-还是跟videomme一样，cpp端负责开启推理服务，python这块直接承担数据处理和测评结果处理，所以daily-omni-cpp-alignment.md的代码项目建议你可以借用一下
-你先读取一下文档和已有的测评结构，评估一下能复用哪些部分，新添加哪些代码，先写个结构设想和todolist
-要对齐的测评代码在/cache/hanqingzhe/Video-MME/evalkit，测评目标daily-omni，模型minicpmo45在~/o45-py，已经有总结的文档了，能不读就不读源代码，有必要确认的时候可以访问
-先只完成python端，cpp推理端先不用管，有需要改的先用文档记录

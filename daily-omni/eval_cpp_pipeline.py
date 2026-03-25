@@ -206,8 +206,8 @@ def process_sample(
         # 3. Reset
         client.reset()
 
-        # 4. 交错 prefill
-        total_cnt = client.prefill_interleaved(
+        # 4. 交错 prefill (v2: batch 音频预计算，mel 归一化 + conv 边界与 Python 对齐)
+        total_cnt = client.prefill_interleaved_v2(
             frame_paths=frame_paths,
             audio_paths=audio_seg_paths,
             skip_system_prompt=True,

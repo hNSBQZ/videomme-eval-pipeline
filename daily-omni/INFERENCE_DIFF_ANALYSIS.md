@@ -1,190 +1,86 @@
-# Daily-Omni 推理端差异分析：Server Pipeline vs omni-cli
+# Daily-Omni 推理端差异分析：Server Pipeline vs Python evalkit vs omni-cli
 
-对比两个推理路径在 Daily-Omni 评测上的差异，分析精度不对齐的原因。
+对比三个推理路径在 Daily-Omni 评测上的差异。
 
+- **对齐基准**：`~/Video-MME/evalkit` + `~/o45-py`（Python HuggingFace 推理）
 - **Server Pipeline**：Python 处理音频图片 → HTTP 发送给 `llama-server` → 异步推理
 - **omni-cli**：`~/llama.cpp-omni` 下的 `omni-cli.cpp --eval-daily-omni` → 同步推理
 
 ---
 
-## 差异总览
+## 已确认与 Python 对齐的项（已排除）
 
-| # | 差异项 | 严重程度 | Server Pipeline | omni-cli |
-|---|--------|---------|----------------|----------|
-| 1 | 采样参数 | **致命** | temp=0.7, repeat_penalty=1.02 | temp=0.0, top_k=1 (greedy) |
-| 2 | assistant prompt 格式 | **高** | `<think>\n\n</think>\n\n<|tts_bos|>` | `<\|spk_bos\|><\|spk\|><\|spk_eos\|><\|tts_bos\|>` |
-| 3 | decode 路径 | **高** | TTS pipeline 路径（hidden states 收集 + token 过滤） | 干净的 text_only_decode（逐 token sample） |
-| 4 | Prompt 选项格式 | **中** | 双前缀 "A. A. xxx"（Python 额外加了 key 前缀） | 单前缀 "A. xxx"（直接拼接原始 choices） |
-| 5 | 额外 `\n` token | **中** | 每帧/每段音频后注入 `prompt="\n"` | 无额外 `\n` 注入 |
-| 6 | prefill 模式 | **中** | async=true（队列 + LLM 线程） | async=false（全同步串行） |
-| 7 | Whisper KV Cache | **低** | reset API 中调用 omni_clear_audio_kv_cache ✓ | 每样本前手动 clear ✓ |
+以下差异项经验证后确认 Server Pipeline 已与 Python evalkit 一致：
 
----
-
-## 详细分析
-
-### 差异 1（致命）：采样参数 — 随机采样 vs Greedy
-
-**这是最可能导致精度差距的原因。**
-
-omni-cli 在 `eval_daily_omni` 开始时显式覆盖采样参数为 greedy：
-
-```cpp
-// omni-cli.cpp L915-918
-params.sampling.temp = 0.0f;
-params.sampling.top_k = 1;
-params.n_predict = 128;
-if (ctx_omni->ctx_sampler) { common_sampler_free(ctx_omni->ctx_sampler); }
-ctx_omni->ctx_sampler = common_sampler_init(ctx_omni->model, params.sampling);
-```
-
-Server Pipeline 的 `llama-server` 启动命令中传的是 `--temp 0.7 --repeat-penalty 1.02`（来自 `eval_cpp_config.py`），并且 **没有在 omni_init 或 decode 阶段覆盖为 greedy**。
-
-> **影响**：MCQ 评测需要确定性输出，temp=0.7 的随机采样会导致每次运行结果不同，且选择概率分散，准确率自然低于 greedy decode。
-
-### 差异 2（高）：assistant prompt 格式不同
-
-omni-cli 的 `text_only_decode` 使用的 suffix：
-
-```cpp
-// omni-cli.cpp L213-215
-std::string suffix = use_tts_template
-    ? "<|im_end|>\n<|im_start|>assistant\n<|spk_bos|><|spk|><|spk_eos|><|tts_bos|>"
-    : "<|im_end|>\n<|im_start|>assistant\n";
-```
-
-评测时 `use_tts_template=true`，所以使用 `<|spk_bos|><|spk|><|spk_eos|><|tts_bos|>` 格式。
-
-Server Pipeline 的 `stream_decode` 使用的 prompt：
-
-```cpp
-// omni.cpp L9169
-std::string prompt = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<|tts_bos|>";
-```
-
-> **影响**：`<think>` 和 `<spk>` 系列 token 是不同的特殊标记，会改变模型进入不同的生成模式/概率分布，直接影响输出质量。
-
-### 差异 3（高）：decode 实现路径完全不同
-
-omni-cli 使用简洁的 `text_only_decode`：
-
-```cpp
-// omni-cli.cpp L219-227
-for (int i = 0; i < max_tokens; ++i) {
-    const char * tok = sample(ctx_omni->ctx_sampler, ctx_omni, &params, &ctx_omni->n_past);
-    if (!tok) break;
-    std::string piece(tok);
-    if (piece == "</s>" || piece == "<|im_end|>" || ...) break;
-    result += piece;
-}
-```
-
-Server Pipeline 走的是完整 TTS pipeline 的 `stream_decode`（~600 行），包括：
-- hidden states 收集（`llama_loop_with_hidden_and_token`）
-- `is_valid_tts_token` 过滤
-- step_size chunk 分块
-- text_queue SSE 推送
-
-即使 `use_tts=false`，这些逻辑也会被执行，可能引入非预期的 token 过滤或状态变化。
-
-### 差异 4（中）：Prompt 选项双前缀
-
-omni-cli 直接拼接原始 choices（已含 "A. xxx" 前缀）：
-
-```cpp
-options_str += c + "\n";  // 结果: "A. Read a book\n"
-```
-
-Python Pipeline 额外添加 key 前缀：
-
-```python
-options_prompt += f"{key}. {choice}\n"  # 结果: "A. A. Read a book\n"
-```
-
-> **影响**：选项格式不一致可能影响模型对选项的理解。
-
-### 差异 5（中）：每帧/每段音频后注入额外 `\n`
-
-Python HTTP client 在每次 `prefill_image` 和 `prefill_audio` 时传入 `prompt="\n"`：
-
-```python
-# eval_cpp_http_client.py L86, L111
-frame_prompt: str = "\n"
-audio_prompt: str = "\n"
-```
-
-Server 端收到后会 `eval_string` 这个换行符。omni-cli 的 `stream_prefill` 不传 prompt 参数，没有额外 `\n`。
-
-> **影响**：多出的 `\n` token 会轻微改变 attention 分布和位置编码。
-
-### 差异 6（中）：同步 vs 异步 prefill
-
-- omni-cli：全程 `async=false`，所有 prefill 同步串行
-- Server：`omni_init` 后 `async=true`，后续帧的 prefill 走 llm_thread queue
-
-异步模式下 prefill 的实际执行顺序由 LLM 线程控制，理论上应当保持 FIFO，但增加了复杂度。
+| # | 差异项 | 结论 |
+|---|--------|------|
+| 1 | 采样参数 | ✅ Python 实际也是 `do_sample=True`（evalkit 传 `sampling=False` 但 o45-py 参数名是 `do_sample`，不生效）。两边均为 temp=0.7, top_p=0.8, top_k=100, repeat_penalty=1.02。已修复 `--top-p`/`--top-k` 传入 server。 |
+| 2 | assistant prompt 格式 | ✅ Python tokenizer chat_template 在 `enable_thinking=False, use_tts_template=True` 时输出 `<think>\n\n</think>\n\n<\|tts_bos\|>`，与 Server Pipeline 的 `stream_decode` 一致。omni-cli 硬编码的 `<\|spk_bos\|><\|spk\|><\|spk_eos\|>` 反而跟 Python 不一致。 |
+| 3 | Prompt 选项格式 | ✅ Python evalkit 的 `_build_options_prompt` 也是 `f"{key}. {choice}\n"` + `.rstrip()`，双前缀行为一致。 |
+| 4 | 额外 `\n` token | ✅ Python `chat()` 中 `omni_mode=False`（evalkit 传 `omni_input` 但参数名是 `omni_mode`，不生效），走 `"\n".join(cur_msgs)`，每帧/音频间也有 `\n`。已修复模板前导 `\n`，消除媒体→文本边界的双 `\n`。 |
+| 5 | Whisper KV Cache | ✅ 双方均正确处理（reset API / 手动 clear）。 |
+| 6 | decode 路径 | ✅ **已排除**。详见下方排查结论。 |
+| 7 | prefill 异步同步 | ✅ **已排除**。详见下方排查结论。 |
 
 ---
 
-## 修复建议
+## 已排查并排除的差异项
 
-### P0：修复采样参数（最高优先级）
+### ~~差异 1~~（已排除）：decode 实现路径
 
-在 `eval_cpp_config.py` 中为 Daily-Omni 评测使用 greedy decoding：
+**原假设**：omni-cli 使用 `text_only_decode`，Server Pipeline 走完整 TTS pipeline 的 `stream_decode`，可能引入 token 过滤或状态变化。
 
-```python
-# eval_cpp_config.py
-TEMPERATURE = 0.0   # 改为 greedy
-TOP_K = 1           # 改为 1
-TOP_P = 1.0         # 不限制
-REPEAT_PENALTY = 1.0  # 不惩罚
-```
+**排查结论：三者 decode 逻辑一致，无实质性差异。**
 
-同时确保 `llama-server` 启动参数传递正确的温度值。
+1. **omni-cli 和 server 调用的是同一个 `stream_decode` 函数**（omni-cli.cpp:195），不存在独立的 `text_only_decode`。
 
-> **注意**：即使 server 启动时设了 `--temp 0.7`，如果 `omni_init` 时不覆盖 sampler 参数，整个 session 内都是 temp=0.7。需要确认 server 端是否有覆盖 sampler 的机制，如果没有，需要在 server 启动参数中直接改为 `--temp 0`。
+2. **`use_tts=false` 时 TTS 相关逻辑被完全旁路**：
+   - TTS/T2W 线程不创建（omni.cpp:9110 `if ... ctx_omni->use_tts`）
+   - LLMOut 不推送给 TTS 队列（omni.cpp:9493 `if ctx_omni->use_tts && ...`）
 
-### P1：对齐 assistant prompt 格式
+3. **采样路径与"干净文本生成"等价**：
+   - `sample_with_hidden_and_token` 中，非双工模式下 logits 不被修改（`length_penalty` 默认 1.0，no-op）
+   - 核心采样调用 `common_sampler_sample()` 与标准 llama.cpp 完全一致
+   - `eval_id_with_hidden` 对比 `eval_id` 唯一区别是临时开启 `llama_set_embeddings(ctx, true)` 提取 hidden states，**不改变 forward pass 的计算或 logits**
 
-将 `stream_decode` 中的 assistant prompt 改为和 omni-cli 的 `text_only_decode` 一致：
+4. **`is_valid_tts_token` 过滤只影响 TTS 数据收集**，不影响文本 response 拼接。所有 token 都会进入 `response += tmp_str`，特殊 token 由后续 post-processing 清理。
 
-**方案 A**（不用 TTS template）：直接使用 `<|im_end|>\n<|im_start|>assistant\n`
+### ~~差异 2~~（已排除）：同步 vs 异步 prefill
 
-**方案 B**（用 TTS template 对齐 omni-cli）：使用 `<|im_end|>\n<|im_start|>assistant\n<|spk_bos|><|spk|><|spk_eos|><|tts_bos|>`
+**原假设**：异步模式增加了复杂度，prefill 执行顺序可能不一致。
 
-需要确认 omni-cli 使用哪个格式精度更好。
+**排查结论：异步同步逻辑正确，FIFO 保序，不影响推理结果。**
 
-### P1：简化 decode 路径
+1. **FIFO 保序**：Python 客户端串行发 HTTP prefill 请求（request-response），server handler 持 `octx_mutex` 推入 FIFO 队列，LLM 线程按序消费。prefill 顺序严格为 `image_0 → audio_0 → image_1 → audio_1 → ... → text_prompt`。
 
-为评测场景增加一个 text-only decode 模式，跳过 TTS hidden states 收集和 token 过滤逻辑，与 omni-cli 的 `text_only_decode` 对齐。
+2. **decode 正确等待所有 prefill 完成**：`stream_decode` 通过 `g_decode_cv.wait(lock, []{ return prefill_done; })` 阻塞，LLM 线程只在队列清空后才设置 `prefill_done = true`（omni.cpp:4444-4457）。
 
-### P2：修复 Prompt 双前缀
+3. **互斥保护到位**：
+   - server handler 持 `octx_mutex` 防止并发请求
+   - 队列操作持 `llm_thread_info->mtx`
+   - text_queue 由 `text_mtx` 保护
 
-```python
-# eval_cpp_pipeline.py build_prompt()
-# 改为直接拼接（不添加 key 前缀），对齐 omni-cli：
-for choice in choices:
-    options_prompt += f"{choice}\n"
-```
+4. **两个理论瑕疵（不影响实际结果）**：
+   - `need_speek` 在 `stream_decode` 中未持锁写入，但 `cv.notify_all()` 后的锁获取提供了足够的 memory barrier
+   - `llm_thread_func` 分支1 释放锁后进入分支2 的 `queue.empty()` 无锁读取，但 Daily-Omni 场景下 decode 时无并发 prefill
 
-### P2：移除额外 `\n` prompt 注入
+---
 
-```python
-# eval_cpp_http_client.py
-# prefill_image / prefill_audio 的 prompt 改为空字符串：
-frame_prompt: str = ""
-audio_prompt: str = ""
-```
+## 剩余排查方向
 
-### P3：评测时使用同步模式
+以上排查确认 decode 路径和 async prefill 逻辑无问题。如果 Server Pipeline 与 Python 仍有分数差异，需从以下方向继续排查：
 
-在 `omni_init` 后、评测开始前，将 `async` 设为 `false`（可通过新增 API 或在 server 端添加配置项实现）。
+| # | 方向 | 说明 |
+|---|------|------|
+| 1 | 采样参数实际生效值 | 确认 temp/top_p/top_k/repeat_penalty 是否真正传入了 `ctx_sampler`（可在 `sample_with_hidden_and_token` 中打印 logits 分布验证） |
+| 2 | 随机种子 | Python 和 C++ 的 RNG 初始状态是否一致，seed 是否固定 |
+| 3 | 模型量化精度差异 | GGUF 量化格式 vs Python FP16/BF16 的数值偏差可能导致累积误差 |
+| 4 | 视觉/音频编码器对齐 | C++ 侧的 vision/audio encoder 输出是否与 Python HF 版精确一致 |
 
 ---
 
 ## 验证步骤
 
-1. 先只修复 P0（采样参数），对比一轮结果
-2. 如果仍有差距，逐步修复 P1/P2
-3. 使用 `--limit 50` 在小样本上快速验证每步修复的效果
-4. 目标：与 omni-cli 的 `--eval-daily-omni` 结果一致（误差 <1%）
+1. 使用 `--limit 50` 在小样本上对比 Server Pipeline vs Python 的逐题输出
+2. 针对上述剩余方向逐一排查
+3. 目标：与 Python evalkit 结果一致（误差 <1%）

@@ -63,7 +63,7 @@ python eval_cpp_pipeline.py --num-gpus 8 --base-port 9080
 
 ```bash
 LOG="log/daily_omni_$(date +%Y%m%d_%H%M%S).log"
-nohup bash -c "python -u eval_cpp_pipeline.py --num-gpus 8 --base-port 9080 2>&1 | tee \"$LOG\"" >/dev/null 2>&1 &
+nohup bash -c "python -u eval_cpp_pipeline.py --num-gpus 4 --base-port 9080 2>&1 | tee \"$LOG\"" >/dev/null 2>&1 &
 echo "log: $LOG"
 ```
 
